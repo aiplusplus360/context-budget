@@ -1,0 +1,50 @@
+{
+  "budget": 900,
+  "reserve": 200,
+  "items": [
+    {
+      "id": "rules",
+      "section": "system",
+      "required": true,
+      "content": "You are a support engineer for a billing API. Answer only from the documents provided, cite the document id, and say so plainly when the documents do not contain the answer."
+    },
+    {
+      "id": "refund-policy",
+      "section": "context",
+      "relevance": 0.94,
+      "content": "Refunds are available within 30 days of the original charge. A refund returns the full amount to the original payment method within 5-10 business days. Partial refunds are supported for usage-based plans where a metering error is confirmed."
+    },
+    {
+      "id": "metering-guide",
+      "section": "context",
+      "relevance": 0.61,
+      "content": "Usage is metered per API call and aggregated hourly. Metering errors are rare but are always corrected by a credit note on the next invoice rather than a refund, unless the customer requests otherwise. To inspect usage, query the /v1/usage endpoint with a date range no wider than 31 days."
+    },
+    {
+      "id": "style-guide",
+      "section": "context",
+      "relevance": 0.05,
+      "content": "All customer-facing writing uses sentence case, avoids exclamation marks, and spells out acronyms on first use."
+    },
+    {
+      "id": "turn-1",
+      "section": "history",
+      "priority": 1,
+      "recency": 1.0,
+      "content": "Customer: I was charged twice on the 3rd.\nAgent: I can see two charges. Can you confirm the invoice id?"
+    },
+    {
+      "id": "turn-2",
+      "section": "history",
+      "priority": 1,
+      "recency": 2.0,
+      "content": "Customer: Invoice INV-88213. I only authorised one payment."
+    },
+    {
+      "id": "question",
+      "section": "task",
+      "required": true,
+      "content": "Can I get a refund for the duplicate charge on INV-88213?"
+    }
+  ]
+}

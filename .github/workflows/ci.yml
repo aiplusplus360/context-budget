@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install -e .
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Example packs within its budget
+        run: |
+          context-budget examples/refund.json --budget 900 --reserve 200 \
+            --json --quiet > out.json
+          python - <<'PY'
+          import json
+          data = json.load(open("out.json"))
+          assert data["tokens_used"] <= data["usable"], data
+          assert data["dropped"] == [], data
+          ids = [p["id"] for p in data["packed"]]
+          # system first, task last, and the strongest document last within
+          # the retrieval section (closest to the question).
+          assert ids[0] == "rules", ids
+          assert ids[-1] == "question", ids
+          context = [p["id"] for p in data["packed"] if p["section"] == "context"]
+          assert context[-1] == "refund-policy", context
+          relevances = [p["id"] for p in data["packed"] if p["section"] == "context"]
+          assert relevances == ["style-guide", "metering-guide", "refund-policy"], relevances
+          print("packed:", ids)
+          PY
+
+      - name: The estimate never exceeds the budget
+        run: |
+          python - <<'PY'
+          from contextbudget import Estimator, Item, pack
+
+          estimator = Estimator()
+          for budget in (200, 500, 1000, 4000):
+              result = pack(
+                  [Item(f"d{i}", "lorem ipsum dolor sit amet " * 60) for i in range(12)]
+                  + [Item("q", "why?", section="task", required=True)],
+                  budget,
+              )
+              assert result.tokens_used <= result.usable, (budget, result.tokens_used)
+              # The rendered text must also fit, not just our bookkeeping.
+              assert estimator.count(result.text) <= result.usable, budget
+          print("no overflow at any budget")
+          PY
+
+      - name: Packing is deterministic
+        run: |
+          python - <<'PY'
+          from contextbudget import Item, pack
+
+          items = [Item(f"d{i}", f"body {i} " * 40, relevance=i / 10) for i in range(5)]
+          runs = {pack(items, 1200).text for _ in range(5)}
+          assert len(runs) == 1, "packing is not deterministic"
+          print("identical output across 5 runs")
+          PY
+
+      - name: A required item is never silently dropped
+        run: |
+          python - <<'PY'
+          from contextbudget import BudgetError, Item, pack
+
+          try:
+              pack([Item("rules", "y" * 40000, section="system", required=True)], 100)
+          except BudgetError as exc:
+              assert exc.items == ["rules"], exc.items
+              print("refused loudly:", exc)
+          else:
+              raise AssertionError("a dropped required item must not pass silently")
+          PY
+
+      - name: A too-tight budget exits 1, bad input exits 2
+        run: |
+          set +e
+          context-budget examples/refund.json --budget 90 --reserve 50 > /dev/null 2>&1
+          tight=$?
+          echo '{not json' > bad.json
+          context-budget bad.json > /dev/null 2>&1
+          broken=$?
+          set -e
+          echo "tight=$tight broken=$broken"
+          test "$tight" -eq 1
+          test "$broken" -eq 2
+
+      - name: Shrinking keeps the head and the tail
+        run: |
+          python - <<'PY'
+          from contextbudget import Estimator, shrink_to
+
+          document = "INTRODUCTION " + ("padding " * 400) + "CONCLUSION"
+          text, omitted = shrink_to(document, 60, Estimator())
+          assert text.startswith("INTRODUCTION"), text[:20]
+          assert text.endswith("CONCLUSION"), text[-20:]
+          assert omitted > 0
+          assert f"[{omitted} characters omitted]" in text
+          print("kept both ends, omitted", omitted)
+          PY
